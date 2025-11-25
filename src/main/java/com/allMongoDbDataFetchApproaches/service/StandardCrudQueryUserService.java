@@ -15,15 +15,7 @@ public class StandardCrudQueryUserService {
         this.repo = repo;
     }
 
-    public StandardCrudQueryUser saveUser(StandardCrudQueryUser user) {
-        return repo.save(user);
-    }
 
-    public List<StandardCrudQueryUser> saveUsers(List<StandardCrudQueryUser> users) {
-        return repo.saveAll(users);
-    }
 
-    public List<StandardCrudQueryUser> getAllUsers() {
-        return repo.findAll();
-    }
+
 }
