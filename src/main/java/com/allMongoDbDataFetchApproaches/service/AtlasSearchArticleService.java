@@ -1,129 +1,53 @@
 package com.allMongoDbDataFetchApproaches.service;
 
-import com.allMongoDbDataFetchApproaches.dto.AtlasMustSearchRequest;
-import com.allMongoDbDataFetchApproaches.dto.AtlasShouldFilterRequest;
-import com.allMongoDbDataFetchApproaches.model.AtlasSearchArticle;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.AggregateIterable;
+import com.mongodb.client.model.search.SearchOperator;
+import com.mongodb.client.model.search.SearchPath;
+import com.mongodb.client.model.Aggregates;
+import com.mongodb.client.model.Projections;
 import org.bson.Document;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
-import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
 import org.springframework.stereotype.Service;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class AtlasSearchArticleService {
 
-    private final MongoTemplate mongoTemplate;
+    private final MongoDatabase mongoDatabase;
 
-    public AtlasSearchArticleService(MongoTemplate mongoTemplate) {
-        this.mongoTemplate = mongoTemplate;
+    public AtlasSearchArticleService(MongoDatabase mongoDatabase) {
+        this.mongoDatabase = mongoDatabase;
     }
 
-    public List<?> basicTextSearch(String searchText) {
+    public List<Document> basicTextSearch(String textGiven) {
 
-        // Build dynamic Atlas $search stage
-        Document searchStage = new Document("$search",
-                new Document("index", "default")
-                        .append("text",
-                                new Document("query", searchText)
-                                        .append("path", Arrays.asList("title", "body", "tags"))
+        // 1 — Get the collection
+        MongoCollection<Document> collection =
+                mongoDatabase.getCollection("AtlasSearch_Articles");
+
+        // 2 — Build individual text operators (one per field)
+        SearchOperator tTitle = SearchOperator.text(SearchPath.fieldPath("title"), textGiven);
+        SearchOperator tBody  = SearchOperator.text(SearchPath.fieldPath("body"), textGiven);
+        SearchOperator tTags  = SearchOperator.text(SearchPath.fieldPath("tags"), textGiven);
+
+        // 3 — Combine them into a compound operator: should(...) takes a List<SearchOperator>
+        SearchOperator textSearch = SearchOperator.compound()
+                .should(List.of(tTitle, tBody, tTags));
+
+        // 4 — Build aggregation pipeline
+        AggregateIterable<Document> result = collection.aggregate(
+                List.of(
+                        Aggregates.search(textSearch),
+                        Aggregates.project(
+                                Projections.include("title", "body", "tags", "category", "rating")
                         )
+                )
         );
 
-        // Wrap into AggregationOperation
-        AggregationOperation searchOp = context -> searchStage;
-
-        // Projection for clean output
-        ProjectionOperation project = Aggregation.project("title", "body", "tags", "category", "rating");
-
-        Aggregation agg = Aggregation.newAggregation(
-                searchOp,
-                project
-        );
-
-        return mongoTemplate.aggregate(
-                agg,
-                "AtlasSearch_Articles",
-                Object.class
-        ).getMappedResults();
+        // Return as list
+        return result.into(new ArrayList<>());
     }
-
-
-    public List<?> mustSearch(AtlasMustSearchRequest req) {
-
-        // Build dynamic MUST query
-        Document mustStage = new Document("$search",
-                new Document("index", "default")
-                        .append("compound",
-                                new Document("must",
-                                        Arrays.asList(
-                                                new Document("text",
-                                                        new Document("query", req.getQueryText())
-                                                                .append("path", req.getFieldPath())
-                                                )
-                                        )
-                                )
-                        )
-        );
-
-        AggregationOperation searchOp = context -> mustStage;
-
-        ProjectionOperation project = Aggregation.project("title", "body", "tags", "category", "rating");
-
-        Aggregation agg = Aggregation.newAggregation(
-                searchOp,
-                project
-        );
-
-        return mongoTemplate.aggregate(
-                agg,
-                "AtlasSearch_Articles",
-                Object.class
-        ).getMappedResults();
-    }
-
-    public List<?> shouldFilterSearch(AtlasShouldFilterRequest req) {
-
-        // Build dynamic should + filter Atlas Search query
-        Document searchStage = new Document("$search",
-                new Document("index", "default")
-                        .append("compound",
-                                new Document("should",
-                                        Arrays.asList(
-                                                new Document("text",
-                                                        new Document("query", req.getShouldText())
-                                                                .append("path", req.getShouldPath())
-                                                )
-                                        )
-                                )
-                                        .append("filter",
-                                                Arrays.asList(
-                                                        new Document("text",
-                                                                new Document("query", req.getFilterValue())
-                                                                        .append("path", req.getFilterField())
-                                                        )
-                                                )
-                                        )
-                        )
-        );
-
-        AggregationOperation searchOp = context -> searchStage;
-
-        ProjectionOperation project = Aggregation.project("title", "body", "tags", "category", "rating");
-
-        Aggregation agg = Aggregation.newAggregation(
-                searchOp,
-                project
-        );
-
-        return mongoTemplate.aggregate(
-                agg,
-                "AtlasSearch_Articles",
-                Object.class
-        ).getMappedResults();
-    }
-
 }
